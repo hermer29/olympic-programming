@@ -54,6 +54,12 @@
         "xloctime": "cpp",
         "xstring": "cpp",
         "xtr1common": "cpp",
-        "xutility": "cpp"
+        "xutility": "cpp",
+        "unordered_set": "cpp",
+        "stack": "cpp",
+        "deque": "cpp",
+        "array": "cpp",
+        "string_view": "cpp",
+        "functional": "cpp"
     }
 }
