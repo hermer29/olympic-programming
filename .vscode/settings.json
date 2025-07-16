@@ -60,6 +60,12 @@
         "deque": "cpp",
         "array": "cpp",
         "string_view": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "map": "cpp",
+        "queue": "cpp",
+        "set": "cpp",
+        "sstream": "cpp",
+        "xtree": "cpp",
+        "random": "cpp"
     }
 }
