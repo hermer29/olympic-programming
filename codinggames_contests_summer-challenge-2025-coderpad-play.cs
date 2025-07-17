@@ -5,15 +5,28 @@ using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 
+using static Player;
+using static Team;
+
+public enum Team
+{
+    Player,
+    Enemy
+}
 
 public class Agent
 {
     public int id;
+    public int localId;
     public int x;
     public int y;
+    public int shootCooldown;
+    public int soakingPower;
     public int cooldown;
-    public int splashbombs;
+    public int optimalRange;
+    public int splashBombs;
     public int wetness;
+    public int Team;
 
     public BTNode Tree;
 
@@ -21,6 +34,8 @@ public class Agent
     {
         Console.WriteLine($"{id}; MOVE {x} {y}");
     }
+
+    public bool IsFriendly => Team == MyId;
 }
 
 public enum NodeStatus
@@ -188,29 +203,52 @@ public class BehaviorTreeBuilder
     }
 }
 
+
 /**
  * Win the water fight by controlling the most territory, or out-soak your opponent!
  **/
 class Player
 {
     
+    public static int ManhattanDistance(int x1, int y1, int x2, int y2)
+    {
+        return Math.Abs(x1 - x2) + Math.Abs(y1 - y2);
+    }
+
+    public static int MyId;
+    public static Dictionary<int, Agent> Friendlies = new Dictionary<int, Agent>();
+    public static Dictionary<int, Agent> Hostile = new Dictionary<int, Agent>();
+    public static Dictionary<int, Agent> AllAgents = new Dictionary<int, Agent>();
 
     static void Main(string[] args)
     {
         var behaviourTreeBuilder = new BehaviorTreeBuilder();
 
         string[] inputs;
-        int myId = int.Parse(Console.ReadLine()); // Your player id (0 or 1)
+        MyId = int.Parse(Console.ReadLine()); // Your player id (0 or 1)
         int agentCount = int.Parse(Console.ReadLine()); // Total number of agents in the game
         for (int i = 0; i < agentCount; i++)
         {
+            var agent = new Agent();
             inputs = Console.ReadLine().Split(' ');
-            int agentId = int.Parse(inputs[0]); // Unique identifier for this agent
-            int player = int.Parse(inputs[1]); // Player id of this agent
-            int shootCooldown = int.Parse(inputs[2]); // Number of turns between each of this agent's shots
-            int optimalRange = int.Parse(inputs[3]); // Maximum manhattan distance for greatest damage output
-            int soakingPower = int.Parse(inputs[4]); // Damage output within optimal conditions
-            int splashBombs = int.Parse(inputs[5]); // Number of splash bombs this can throw this game
+            agent.id = int.Parse(inputs[0]); // Unique identifier for this agent
+            agent.Team = int.Parse(inputs[1]); // Player id of this agent
+            agent.shootCooldown = int.Parse(inputs[2]); // Number of turns between each of this agent's shots
+            agent.cooldown = agent.shootCooldown;
+            agent.optimalRange = int.Parse(inputs[3]); // Maximum manhattan distance for greatest damage output
+            agent.soakingPower = int.Parse(inputs[4]); // Damage output within optimal conditions
+            agent.splashBombs = int.Parse(inputs[5]); // Number of splash bombs this can throw this game
+            AllAgents[agent.id] = agent;
+            if (agent.IsFriendly)
+            {
+                Friendlies[agent.id] = agent;
+                agent.Tree = behaviourTreeBuilder.Build(agent);
+            }
+            else
+            {
+                Hostile[agent.id] = agent;
+            }
+
         }
         inputs = Console.ReadLine().Split(' ');
         int width = int.Parse(inputs[0]); // Width of the game map
@@ -220,9 +258,9 @@ class Player
             inputs = Console.ReadLine().Split(' ');
             for (int j = 0; j < width; j++)
             {
-                int x = int.Parse(inputs[3*j]);// X coordinate, 0 is left edge
-                int y = int.Parse(inputs[3*j+1]);// Y coordinate, 0 is top edge
-                int tileType = int.Parse(inputs[3*j+2]);
+                int x = int.Parse(inputs[3 * j]);// X coordinate, 0 is left edge
+                int y = int.Parse(inputs[3 * j + 1]);// Y coordinate, 0 is top edge
+                int tileType = int.Parse(inputs[3 * j + 2]);
             }
         }
 
@@ -230,32 +268,22 @@ class Player
         while (true)
         {
             agentCount = int.Parse(Console.ReadLine());
-            var agents = new List<Agent>();
 
             for (int i = 0; i < agentCount; i++)
             {
-                var agent = new Agent();
                 inputs = Console.ReadLine().Split(' ');
-                agent.id = int.Parse(inputs[0]);
-                agent.x = int.Parse(inputs[1]);
-                agent.y = int.Parse(inputs[2]);
-                agent.cooldown = int.Parse(inputs[3]); // Number of turns before this agent can shoot
-                agent.splashbombs = int.Parse(inputs[4]);
-                agent.wetness = int.Parse(inputs[5]); // Damage (0-100) this agent has taken
-                agent.Tree = behaviourTreeBuilder.Build(agent);
-                agents.Add(agent);
+                var id = int.Parse(inputs[0]);
+                var curr = AllAgents[id];
+                curr.x = int.Parse(inputs[1]);
+                curr.y = int.Parse(inputs[2]);
+                curr.cooldown = int.Parse(inputs[3]); // Number of turns before this agent can shoot
+                curr.splashBombs = int.Parse(inputs[4]);
+                curr.wetness = int.Parse(inputs[5]); // Damage (0-100) this agent has taken
             }
             int myAgentCount = int.Parse(Console.ReadLine()); // Number of alive agents controlled by you
-            for (int i = 0; i < myAgentCount; i++)
+            foreach (var agent in Friendlies.Values)
             {
-                var curr = agents[i];
-                curr.Tree.Execute();
-                // Write an action using Console.WriteLine()
-                // To debug: Console.Error.WriteLine("Debug messages...");
-
-
-                // One line per agent: <agentId>;<action1;action2;...> actions are "MOVE x y | SHOOT id | THROW x y | HUNKER_DOWN | MESSAGE text"
-            
+                agent.Tree.Execute();
             }
         }
     }
