@@ -243,7 +243,7 @@ public class BehaviorTreeBuilder
 
         var isAttack = new ConditionNode(() =>
         {
-            var target = Blackboard.LocalGet(agent, "target", bestTarget);
+            var target = Blackboard.LocalGet(agent, "target");
             if (target == null)
             {
                 return NodeStatus.Failure;
