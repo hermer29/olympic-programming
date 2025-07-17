@@ -35,7 +35,7 @@ public class Agent
 
     public void WritePrefix()
     {
-        collectedCommand = "{id}";
+        collectedCommand = $"{id}";
     }
 
     public void EndCommand() {
@@ -244,17 +244,14 @@ public class BehaviorTreeBuilder
         var isAttack = new ConditionNode(() =>
         {
             var target = Blackboard.LocalGet<Agent>(agent, "target");
-            if (target == null)
-            {
-                return NodeStatus.Failure;
-            }
-            return NodeStatus.Success;
+            return target != null;
         });
 
         var attack = new ActionNode(() =>
         {
             var target = Blackboard.LocalGet<Agent>(agent, "target");
             agent.Attack(target);
+            target.plannedWetness += CalculateDamage(agent, target);
             return NodeStatus.Success;
         });
 
