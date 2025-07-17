@@ -42,7 +42,7 @@ class Player
         // game loop
         while (true)
         {
-            int agentCount = int.Parse(Console.ReadLine());
+            agentCount = int.Parse(Console.ReadLine());
             for (int i = 0; i < agentCount; i++)
             {
                 inputs = Console.ReadLine().Split(' ');
