@@ -26,16 +26,39 @@ public class Agent
     public int optimalRange;
     public int splashBombs;
     public int wetness;
+    public int? plannedWetness;
     public int Team;
 
     public BTNode Tree;
 
+    private string collectedCommand;
+
+    public void WritePrefix()
+    {
+        collectedCommand = "{id}";
+    }
+
+    public void EndCommand() {
+        Console.WriteLine(collectedCommand);
+    }
+
     public void Move(int x, int y)
     {
-        Console.WriteLine($"{id}; MOVE {x} {y}");
+        collectedCommand += $";MOVE {x} {y}";
+    }
+
+    public void Attack(Agent agent)
+    {
+        collectedCommand += $";SHOOT {agent.id}";
+    }
+
+    public void Idle()
+    {
+        collectedCommand += ";HUNKER_DOWN";
     }
 
     public bool IsFriendly => Team == MyId;
+    public bool IsAlive => wetness >= 100;
 }
 
 public enum NodeStatus
@@ -146,6 +169,25 @@ public class InverterNode : BTNode
     }
 }
 
+public static class Blackboard
+{
+    private static Dictionary<string, object> _data = new Dictionary<string, object>();
+
+    public static void Set<T>(string key, T value) => _data[key] = value;
+
+    public static T Get<T>(string key) => _data.TryGetValue(key, out var value) ? (T)value : default(T);
+
+    public static bool Has(string key) => _data.ContainsKey(key);
+
+    public static void LocalSet<T>(Agent agent, string key, T value)
+    {
+        _data[$"{agent.id}_{key}"] = value;
+    }
+
+    public static T LocalGet<T>(Agent agent, string key) => _data.TryGetValue($"{agent.id}_{key}", out var value) ? (T)value : default(T);
+    public static bool LocalHas(Agent agent, string key) => _data.ContainsKey($"{agent.id}_{key}");
+}
+
 // Повтор (Repeater) — повторяет ребёнка N раз или бесконечно
 public class RepeaterNode : BTNode
 {
@@ -181,23 +223,51 @@ public class BehaviorTreeBuilder
     public BTNode Build(Agent agent)
     {
         // Листья (действия и условия)
-        var isId1 = new ConditionNode(() => agent.id == 1);
-        var move61 = new ActionNode(() =>
+        
+        var searchForBestTarget = new ActionNode(() =>
         {
-            agent.Move(6, 1);
-            return NodeStatus.Success;
-    });
-        var isId2 = new ConditionNode(() => agent.id == 2);
-        var move63 = new ActionNode(() =>
-        {
-            agent.Move(6, 1);
+            var maxH = 0;
+            Agent bestTarget = null;
+            foreach (var enemy in Hostile.Values)
+            {
+                var h = CalculateAttackHeuristic(agent, enemy);
+                if (h > maxH)
+                {
+                    maxH = h;
+                    bestTarget = enemy;
+                }
+            }
+            Blackboard.LocalSet(agent, "target", bestTarget);
             return NodeStatus.Success;
         });
 
+        var isAttack = new ConditionNode(() =>
+        {
+            var target = Blackboard.LocalGet(agent, "target", bestTarget);
+            if (target == null)
+            {
+                return NodeStatus.Failure;
+            }
+            return NodeStatus.Success;
+        });
+
+        var attack = new ActionNode(() =>
+        {
+            var target = Blackboard.LocalGet(agent, "target", bestTarget);
+            agent.Attack(target);
+            return NodeStatus.Success;
+        });
+
+        var ignore = new ActionNode(() =>
+        {
+            agent.Idle();
+            return NodeStatus.Success;
+        });
+
+
         // Композитные узлы
-        var attackSequence = new SequenceNode(new List<BTNode> { isId1, move61 });
-        var retreatSequence = new SequenceNode(new List<BTNode> { isId2, move63 });
-         var mainSelector = new SelectorNode(new List<BTNode> { attackSequence, retreatSequence });
+        var attackSequence = new SequenceNode(new List<BTNode> { searchForBestTarget, isAttack, attack });
+        var mainSelector = new SelectorNode(new List<BTNode> { attackSequence, ignore });
 
         return mainSelector;
     }
@@ -209,10 +279,35 @@ public class BehaviorTreeBuilder
  **/
 class Player
 {
-    
+    public static int CalculateAttackHeuristic(Agent a, Agent b)
+    {
+        var damage = CalculateDamage(a, b);
+        b.plannedWetness ??= b.wetness;
+        if (b.plannedWetness + damage >= 100)
+        {
+            return 9999;
+        }
+        return b.plannedWetness + damage;
+    }
+
     public static int ManhattanDistance(int x1, int y1, int x2, int y2)
     {
         return Math.Abs(x1 - x2) + Math.Abs(y1 - y2);
+    }
+
+    public static int CalculateDamage(Agent agentA, Agent agentB)
+    {
+        var initDamage = agentA.soakingPower;
+        var distance = ManhattanDistance(agentA.x, agentA.y, agentB.x, agentB.y);
+        if (distance > agentA.optimalRange * 2)
+        {
+            initDamage = 0;
+        }
+        if (distance > agentA.optimalRange)
+        {
+            initDamage /= 2;
+        }
+        return initDamage;
     }
 
     public static int MyId;
@@ -281,9 +376,11 @@ class Player
                 curr.wetness = int.Parse(inputs[5]); // Damage (0-100) this agent has taken
             }
             int myAgentCount = int.Parse(Console.ReadLine()); // Number of alive agents controlled by you
-            foreach (var agent in Friendlies.Values)
+            foreach (var agent in Friendlies.Values.OrderBy(x => x.id))
             {
+                agent.WritePrefix();
                 agent.Tree.Execute();
+                agent.EndCommand();
             }
         }
     }
