@@ -283,11 +283,11 @@ class Player
     {
         var damage = CalculateDamage(a, b);
         b.plannedWetness ??= b.wetness;
-        if (b.plannedWetness + damage >= 100)
+        if (b.plannedWetness.Value + damage >= 100)
         {
             return 9999;
         }
-        return b.plannedWetness + damage;
+        return b.plannedWetness.Value + damage;
     }
 
     public static int ManhattanDistance(int x1, int y1, int x2, int y2)
