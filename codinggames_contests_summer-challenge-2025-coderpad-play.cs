@@ -243,7 +243,7 @@ public class BehaviorTreeBuilder
 
         var isAttack = new ConditionNode(() =>
         {
-            var target = Blackboard.LocalGet(agent, "target");
+            var target = Blackboard.LocalGet<Agent>(agent, "target");
             if (target == null)
             {
                 return NodeStatus.Failure;
@@ -283,6 +283,10 @@ class Player
     {
         var damage = CalculateDamage(a, b);
         b.plannedWetness ??= b.wetness;
+        if (b.plannedWetness.Value >= 100)
+        {
+            return 0;
+        }
         if (b.plannedWetness.Value + damage >= 100)
         {
             return 9999;
