@@ -26,9 +26,10 @@ public class Agent
     public int optimalRange;
     public int splashBombs;
     public int wetness;
-    public int? plannedWetness;
+    public int plannedWetness;
     public int Team;
 
+    public bool isDead => wetness >= 100;
     public BTNode Tree;
 
     private string collectedCommand;
@@ -38,7 +39,8 @@ public class Agent
         collectedCommand = $"{id}";
     }
 
-    public void EndCommand() {
+    public void EndCommand()
+    {
         Console.WriteLine(collectedCommand);
     }
 
@@ -59,6 +61,26 @@ public class Agent
 
     public bool IsFriendly => Team == MyId;
     public bool IsAlive => wetness >= 100;
+
+    public Agent DeepCopy()
+    {
+        return new Agent()
+        {
+            id = this.id,
+            collectedCommand = this.collectedCommand,
+            x = this.x,
+            y = this.y,
+            shootCooldown = this.shootCooldown,
+            soakingPower = this.soakingPower,
+            cooldown = this.cooldown,
+            optimalRange = this.optimalRange,
+            splashBombs = this.splashBombs,
+            wetness = this.wetness,
+            plannedWetness = this.plannedWetness,
+            Team = this.Team,
+            localId = this.localId
+        };
+    }
 }
 
 public enum NodeStatus
@@ -224,20 +246,26 @@ public class BehaviorTreeBuilder
     {
         // Листья (действия и условия)
         
+
         var searchForBestTarget = new ActionNode(() =>
         {
-            var maxH = 0;
-            Agent bestTarget = null;
-            foreach (var enemy in Hostile.Values)
+            var maxRatio = 0f;
+            var bestTargetAll = (Agent)null;
+            var bestY = 0;
+            for (int y = 0; y <= 4; y++)
             {
-                var h = CalculateAttackHeuristic(agent, enemy);
-                if (h > maxH)
+                var ratio = SimulateOutInDamageRatio(agent, agent.x, y, out Agent bestTarget);
+
+                if (ratio > maxRatio)
                 {
-                    maxH = h;
-                    bestTarget = enemy;
+                    maxRatio = ratio;
+                    bestY = y;
+                    bestTargetAll = bestTarget;
                 }
             }
-            Blackboard.LocalSet(agent, "target", bestTarget);
+            Console.Error.WriteLine($"Best target for agent {agent.id} at position ({agent.x}, {bestY}) with ratio {maxRatio}, target {bestTargetAll?.id}");
+            agent.Move(agent.x, bestY);
+            Blackboard.LocalSet(agent, "target", bestTargetAll);
             return NodeStatus.Success;
         });
 
@@ -279,21 +307,60 @@ class Player
     public static int CalculateAttackHeuristic(Agent a, Agent b)
     {
         var damage = CalculateDamage(a, b);
-        b.plannedWetness ??= b.wetness;
-        if (b.plannedWetness.Value >= 100)
+        if (b.plannedWetness >= 100)
         {
             return 0;
         }
-        if (b.plannedWetness.Value + damage >= 100)
+        if (b.plannedWetness + damage >= 100)
         {
             return 9999;
         }
-        return b.plannedWetness.Value + damage;
+        return b.plannedWetness + damage;
+    }
+
+    public static float SimulateOutInDamageRatio(Agent a, int x, int y, out Agent bestTarget)
+    {
+        bestTarget = null;
+        var copy = a.DeepCopy();
+        copy.x = x;
+        copy.y = y;
+        var allDmgToMe = 0f;
+        var allDmgToEnemy = 0f;
+        var maxDmg = 0f;
+        foreach (Agent hostile in Hostile.Values)
+        {
+            if (hostile.isDead)
+            {
+                continue;
+            }
+            var dmg = CalculateDamageWithCovers(copy, hostile);
+            if(dmg > maxDmg)
+            {
+                maxDmg = dmg;
+                bestTarget = hostile;
+            }
+            allDmgToMe += CalculateDamageWithCovers(hostile, copy);
+            allDmgToEnemy += dmg;
+        }
+        allDmgToEnemy /= Hostile.Count;
+        allDmgToMe /= Hostile.Count;
+        var ratio = allDmgToMe / (allDmgToEnemy + 0.0001f); // Добавляем малое значение, чтобы избежать деления на ноль
+        Console.Error.WriteLine($"Simulating attack at position ({x}, {y}), my damage: {allDmgToMe}, enemy damage: {allDmgToEnemy}, ratio: {ratio}");
+        return ratio;
     }
 
     public static int ManhattanDistance(int x1, int y1, int x2, int y2)
     {
         return Math.Abs(x1 - x2) + Math.Abs(y1 - y2);
+    }
+
+    public static float CalculateDamageWithCovers(Agent agentA, Agent agentB)
+    {
+        var initDamage = CalculateDamage(agentA, agentB);
+        var damageModification = DamageCalculator.IsTargetCovered(agentA, agentB);
+        if(agentA.x == 12 && agentA.y == 3)
+            Console.Error.WriteLine($"Agent {agentA.id} attacking {agentB.id} at ({agentB.x}, {agentB.y}) with initial damage {initDamage} and modification {damageModification}");
+        return initDamage * damageModification;
     }
 
     public static int CalculateDamage(Agent agentA, Agent agentB)
@@ -311,11 +378,119 @@ class Player
         return initDamage;
     }
 
+    public static List<(int x, int y)> GetShortestPath(int startX, int startY, int endX, int endY)
+    {
+        List<(int x, int y)> path = new List<(int x, int y)>();
+
+        int dx = Math.Abs(endX - startX);
+        int dy = -Math.Abs(endY - startY);
+
+        int sx = startX < endX ? 1 : -1;
+        int sy = startY < endY ? 1 : -1;
+
+        int err = dx + dy;
+        int x = startX;
+        int y = startY;
+
+        while (true)
+        {
+            path.Add((x, y)); // Добавляем текущую точку в путь
+
+            if (x == endX && y == endY) // Достигли цели
+                break;
+
+            int e2 = 2 * err;
+
+            if (e2 >= dy) // Горизонтальное движение
+            {
+                if (x == endX)
+                    break;
+                err += dy;
+                x += sx;
+            }
+
+            if (e2 <= dx) // Вертикальное движение
+            {
+                if (y == endY)
+                    break;
+                err += dx;
+                y += sy;
+            }
+        }
+
+        return path;
+    }
+
+    public class DamageCalculator
+{
+    // Проверяет, находится ли цель за укрытием
+    public static float IsTargetCovered(
+        Agent attackerPos, 
+        Agent targetPos)
+    {
+        foreach (var cover in CoverPositions)
+        {
+            // 1. Проверка, что атакующий не соседствует с укрытием
+            if (IsAdjacent(attackerPos, cover.x, cover.y))
+                continue;
+
+            // 2. Проверка, что атакующий не на одной оси с укрытием
+            if (IsOnSameAxis(attackerPos, targetPos, cover))
+                continue;
+
+            // 3. Проверка, что укрытие находится между атакующим и целью
+            if (IsCoverBetween(attackerPos, targetPos, cover))
+                return cover.damageModification; // Возвращаем модификатор урона укрытия
+        }
+        return 1f; // Если укрытие не найдено, возвращаем 1 (без модификации урона)
+    }
+
+        private static void March(int sx, int sy, int ex, int ey)
+        {
+            for(int x = sx; int )
+        }
+
+    // Проверка соседства (включая диагонали)
+        private static bool IsAdjacent(Agent pos1, int x, int y)
+        {
+            return Math.Abs(pos1.x - x) <= 1 && Math.Abs(pos1.y - y) <= 1;
+        }
+
+    // Проверка нахождения на одной оси (горизонталь/вертикаль)
+    private static bool IsOnSameAxis(Agent attacker, Agent target, (int x, int y, float damageModification) cover)
+    {
+        // Горизонтальная ось
+        if (attacker.y == target.y && attacker.y == cover.y)
+            return true;
+        
+        // Вертикальная ось
+        if (attacker.x == target.x && attacker.x == cover.x)
+            return true;
+        
+        return false;
+    }
+
+    // Проверка, что укрытие находится между атакующим и целью
+    private static bool IsCoverBetween(Agent attacker, Agent target, (int x, int y, float damageModification) cover)
+    {
+        // Проверка по X
+        if ((attacker.x < cover.x && cover.x < target.x) || (attacker.x > cover.x && cover.x > target.x))
+            return true;
+        
+        // Проверка по Y
+        if ((attacker.y < cover.y && cover.y < target.y) || (attacker.y > cover.y && cover.y > target.y))
+            return true;
+        
+        return false;
+    }
+
+}
+
     public static int MyId;
     public static Dictionary<int, Agent> Friendlies = new Dictionary<int, Agent>();
     public static Dictionary<int, Agent> Hostile = new Dictionary<int, Agent>();
     public static Dictionary<int, Agent> AllAgents = new Dictionary<int, Agent>();
-
+    public static List<(int x, int y, float damageModification)> CoverPositions = new List<(int x, int y, float damageModification)>();
     static void Main(string[] args)
     {
         var behaviourTreeBuilder = new BehaviorTreeBuilder();
@@ -357,6 +532,14 @@ class Player
                 int x = int.Parse(inputs[3 * j]);// X coordinate, 0 is left edge
                 int y = int.Parse(inputs[3 * j + 1]);// Y coordinate, 0 is top edge
                 int tileType = int.Parse(inputs[3 * j + 2]);
+                if (tileType == 1) // Cover tile
+                {
+                    CoverPositions.Add((x, y, 0.5f));
+                }
+                else if (tileType == 2) // Water tile
+                {
+                    CoverPositions.Add((x, y, 0.75f));
+                }
             }
         }
 
@@ -375,6 +558,7 @@ class Player
                 curr.cooldown = int.Parse(inputs[3]); // Number of turns before this agent can shoot
                 curr.splashBombs = int.Parse(inputs[4]);
                 curr.wetness = int.Parse(inputs[5]); // Damage (0-100) this agent has taken
+                curr.plannedWetness = curr.wetness;
             }
             int myAgentCount = int.Parse(Console.ReadLine()); // Number of alive agents controlled by you
             foreach (var agent in Friendlies.Values.OrderBy(x => x.id))
@@ -382,6 +566,13 @@ class Player
                 agent.WritePrefix();
                 agent.Tree.Execute();
                 agent.EndCommand();
+            }
+            foreach (var enemy in Hostile.Values.ToArray())
+            {
+                if (enemy.isDead)
+                {
+                    Hostile.Remove(enemy.id);
+                }
             }
         }
     }
