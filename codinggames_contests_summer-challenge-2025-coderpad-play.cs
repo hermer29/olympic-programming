@@ -253,7 +253,7 @@ public class BehaviorTreeBuilder
 
         var attack = new ActionNode(() =>
         {
-            var target = Blackboard.LocalGet(agent, "target", bestTarget);
+            var target = Blackboard.LocalGet<Agent>(agent, "target");
             agent.Attack(target);
             return NodeStatus.Success;
         });
